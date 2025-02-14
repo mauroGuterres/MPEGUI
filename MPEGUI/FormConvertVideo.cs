@@ -3,14 +3,14 @@ using System.Text.RegularExpressions;
 
 namespace MPEGUI
 {
-    public partial class Form1 : Form
+    public partial class FormConvertVideo : Form
     {
         Dictionary<string, string> codecMap;
         private Process _ffmpegProcess;
         private bool _isConversionRunning = false;
         private TimeSpan _totalDuration = TimeSpan.Zero; // Store total duration for progress tracking
 
-        public Form1()
+        public FormConvertVideo()
         {
             InitializeComponent();
             LoadFFmpegCodecs();
@@ -118,7 +118,7 @@ namespace MPEGUI
             string selectedFriendlyName = cmbCodec.SelectedItem.ToString();
             string selectedCodec = codecMap.FirstOrDefault(x => x.Value == selectedFriendlyName).Key ?? "libx264";
 
-            string bitrate = txtBitrate.Text.Trim();
+            string bitrate = "";
             int crf = trkCRF.Value;
 
             btnConvert.Invoke((Action)(() => btnConvert.Enabled = false));

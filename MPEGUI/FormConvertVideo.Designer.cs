@@ -1,6 +1,6 @@
 ﻿namespace MPEGUI
 {
-    partial class Form1
+    partial class FormConvertVideo
     {
         /// <summary>
         ///  Required designer variable.
@@ -32,11 +32,9 @@
             lblSelectedFile = new Label();
             btnConvert = new Button();
             cmbCodec = new ComboBox();
-            txtBitrate = new TextBox();
             trkCRF = new TrackBar();
             btnCancel = new Button();
             lblCRFValue = new Label();
-            label1 = new Label();
             progressBar = new ProgressBar();
             menuStrip1 = new MenuStrip();
             ((System.ComponentModel.ISupportInitialize)trkCRF).BeginInit();
@@ -62,7 +60,7 @@
             // 
             // btnConvert
             // 
-            btnConvert.Location = new Point(347, 29);
+            btnConvert.Location = new Point(398, 29);
             btnConvert.Name = "btnConvert";
             btnConvert.Size = new Size(141, 34);
             btnConvert.TabIndex = 2;
@@ -75,19 +73,12 @@
             cmbCodec.FormattingEnabled = true;
             cmbCodec.Location = new Point(159, 29);
             cmbCodec.Name = "cmbCodec";
-            cmbCodec.Size = new Size(182, 33);
+            cmbCodec.Size = new Size(233, 33);
             cmbCodec.TabIndex = 3;
-            // 
-            // txtBitrate
-            // 
-            txtBitrate.Location = new Point(415, 77);
-            txtBitrate.Name = "txtBitrate";
-            txtBitrate.Size = new Size(150, 31);
-            txtBitrate.TabIndex = 4;
             // 
             // trkCRF
             // 
-            trkCRF.Location = new Point(347, 124);
+            trkCRF.Location = new Point(536, 27);
             trkCRF.Maximum = 28;
             trkCRF.Minimum = 18;
             trkCRF.Name = "trkCRF";
@@ -97,7 +88,7 @@
             // 
             // btnCancel
             // 
-            btnCancel.Location = new Point(494, 29);
+            btnCancel.Location = new Point(398, 69);
             btnCancel.Name = "btnCancel";
             btnCancel.Size = new Size(141, 34);
             btnCancel.TabIndex = 6;
@@ -108,26 +99,17 @@
             // lblCRFValue
             // 
             lblCRFValue.AutoSize = true;
-            lblCRFValue.Location = new Point(478, 168);
+            lblCRFValue.Location = new Point(667, 71);
             lblCRFValue.Name = "lblCRFValue";
             lblCRFValue.Size = new Size(43, 25);
             lblCRFValue.TabIndex = 7;
             lblCRFValue.Text = "CRF";
             // 
-            // label1
-            // 
-            label1.AutoSize = true;
-            label1.Location = new Point(347, 77);
-            label1.Name = "label1";
-            label1.Size = new Size(62, 25);
-            label1.TabIndex = 8;
-            label1.Text = "Bitrate";
-            // 
             // progressBar
             // 
             progressBar.Location = new Point(12, 238);
             progressBar.Name = "progressBar";
-            progressBar.Size = new Size(674, 34);
+            progressBar.Size = new Size(831, 34);
             progressBar.TabIndex = 9;
             // 
             // menuStrip1
@@ -135,28 +117,26 @@
             menuStrip1.ImageScalingSize = new Size(24, 24);
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
-            menuStrip1.Size = new Size(698, 24);
+            menuStrip1.Size = new Size(855, 24);
             menuStrip1.TabIndex = 10;
             menuStrip1.Text = "menuStrip1";
             // 
-            // Form1
+            // FormConvertVideo
             // 
             AutoScaleDimensions = new SizeF(10F, 25F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(698, 302);
+            ClientSize = new Size(855, 302);
             Controls.Add(progressBar);
-            Controls.Add(label1);
             Controls.Add(lblCRFValue);
             Controls.Add(btnCancel);
             Controls.Add(trkCRF);
-            Controls.Add(txtBitrate);
             Controls.Add(cmbCodec);
             Controls.Add(btnConvert);
             Controls.Add(lblSelectedFile);
             Controls.Add(btnSelectFile);
             Controls.Add(menuStrip1);
             MainMenuStrip = menuStrip1;
-            Name = "Form1";
+            Name = "FormConvertVideo";
             Text = "MPEGUI";
             FormClosing += Form1_FormClosing;
             ((System.ComponentModel.ISupportInitialize)trkCRF).EndInit();
@@ -170,11 +150,9 @@
         private Label lblSelectedFile;
         private Button btnConvert;
         private ComboBox cmbCodec;
-        private TextBox txtBitrate;
         private TrackBar trkCRF;
         private Button btnCancel;
         private Label lblCRFValue;
-        private Label label1;
         private ProgressBar progressBar;
         private MenuStrip menuStrip1;
     }
