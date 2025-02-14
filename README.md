@@ -17,7 +17,7 @@ MPEGUI is a Windows Forms application built with .NET 8 that provides an easy-to
 ## Installation
 1. **Clone this repository**
    ```sh
-   git clone https://github.com/YOUR_USERNAME/MPEGUI.git
+   git clone https://github.com/mauroGuterres/MPEGUI.git
    cd MPEGUI
    ```
 2. **Download and place FFmpeg**
