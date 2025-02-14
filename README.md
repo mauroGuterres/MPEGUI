@@ -49,7 +49,7 @@ MPEGUI is a Windows Forms application built with .NET 8 that provides an easy-to
 ### Convert Video
 1. **Select a video file**
 2. **Choose a codec** (e.g., H.264, H.265, VP9, etc.)
-3. **Set CRF or Bitrate**
+3. **Set CRF**
 4. **Click Convert**
 
 ### Split Video
