@@ -273,31 +273,36 @@ namespace MPEGUI
             }));
 
             TimeSpan partDuration = TimeSpan.FromSeconds(videoDuration.TotalSeconds / parts);
-            List<Task> splitTasks = new List<Task>();
 
-            int completedParts = 0;
-            object progressLock = new object(); // Prevents race conditions
+            // Array to hold progress for each part (0 to 100)
+            double[] partProgressValues = new double[parts];
+
+            List<Task> splitTasks = new List<Task>();
 
             for (int i = 0; i < parts; i++)
             {
-                string outputFile = Path.Combine(outputFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}_part{i + 1}{Path.GetExtension(inputFile)}");
-                string formattedStartTime = TimeSpan.FromSeconds(i * partDuration.TotalSeconds).ToString(@"hh\:mm\:ss\.fff");
+                // Capture the current part index for the lambda
+                int partIndex = i;
+
+                string outputFile = Path.Combine(outputFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}_part{partIndex + 1}{Path.GetExtension(inputFile)}");
+                string formattedStartTime = TimeSpan.FromSeconds(partIndex * partDuration.TotalSeconds).ToString(@"hh\:mm\:ss\.fff");
                 string formattedPartDuration = partDuration.ToString(@"hh\:mm\:ss\.fff");
 
                 string ffmpegArgs = $"-i \"{inputFile}\" -c copy -y -ss {formattedStartTime} -t {formattedPartDuration} \"{outputFile}\"";
 
                 Debug.WriteLine($"Running FFmpeg Split Command: {ffmpegArgs}");
 
-                Task splitTask = RunFFmpegAsync(ffmpegArgs, progressBar, partDuration, videoDuration, cancellationToken, (partProgress) =>
+                Task splitTask = RunFFmpegAsync(ffmpegArgs, progressBar, partDuration, videoDuration, cancellationToken, (currentPartProgress) =>
                 {
-                    lock (progressLock)
+                    // Update this part's progress value
+                    lock (partProgressValues)
                     {
-                        double elapsedSeconds = (completedParts + (partProgress / 100.0)) * partDuration.TotalSeconds;
-                        int newProgress = (int)((elapsedSeconds / videoDuration.TotalSeconds) * 100);
-
+                        partProgressValues[partIndex] = currentPartProgress;
+                        // Compute overall progress as the average of all part progress values.
+                        double overallProgress = partProgressValues.Average();
                         progressBar.Invoke((Action)(() =>
                         {
-                            progressBar.Value = Math.Min(100, Math.Max(0, newProgress));
+                            progressBar.Value = Math.Min(100, (int)overallProgress);
                         }));
                     }
                 }, true);
@@ -307,8 +312,10 @@ namespace MPEGUI
 
             await Task.WhenAll(splitTasks);
 
+            // Ensure the progress bar reaches 100% at the end.
             progressBar.Invoke((Action)(() => progressBar.Value = 100));
         }
+
 
         private static string GetFFmpegPath()
         {
