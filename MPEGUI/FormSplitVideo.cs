@@ -49,9 +49,7 @@ namespace MPEGUI
             {
                 MessageBox.Show("Please enter at least 2 parts!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
-            }
-
-            bool useGpu = chkUseGpu.Checked;
+            }            
 
             btnSplit.Invoke((Action)(() => btnSplit.Enabled = false));
             btnCancel.Invoke((Action)(() => btnCancel.Enabled = true));

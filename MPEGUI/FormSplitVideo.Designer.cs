@@ -34,7 +34,6 @@
             lblSplitIn = new Label();
             lblParts = new Label();
             btnSplit = new Button();
-            chkUseGpu = new CheckBox();
             progressBar = new ProgressBar();
             btnCancel = new Button();
             ((System.ComponentModel.ISupportInitialize)numParts).BeginInit();
@@ -94,16 +93,6 @@
             btnSplit.UseVisualStyleBackColor = true;
             btnSplit.Click += btnSplit_Click;
             // 
-            // chkUseGpu
-            // 
-            chkUseGpu.AutoSize = true;
-            chkUseGpu.Location = new Point(38, 161);
-            chkUseGpu.Name = "chkUseGpu";
-            chkUseGpu.Size = new Size(106, 29);
-            chkUseGpu.TabIndex = 6;
-            chkUseGpu.Text = "Use GPU";
-            chkUseGpu.UseVisualStyleBackColor = true;
-            // 
             // progressBar
             // 
             progressBar.Location = new Point(33, 234);
@@ -128,7 +117,6 @@
             ClientSize = new Size(800, 450);
             Controls.Add(btnCancel);
             Controls.Add(progressBar);
-            Controls.Add(chkUseGpu);
             Controls.Add(btnSplit);
             Controls.Add(lblParts);
             Controls.Add(lblSplitIn);
@@ -150,7 +138,6 @@
         private Label lblSplitIn;
         private Label lblParts;
         private Button btnSplit;
-        private CheckBox chkUseGpu;
         private ProgressBar progressBar;
         private Button btnCancel;
     }
