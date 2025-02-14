@@ -8,7 +8,6 @@ MPEGUI is a Windows Forms application built with .NET 8 that provides an easy-to
 - **CRF-based encoding** for optimal quality and file size.
 - **Split videos** into multiple parts without re-encoding.
 - **Progress tracking** for conversions and splits.
-- **Automatic detection** of system-installed FFmpeg or fallback to an embedded version.
 
 ## Requirements
 - **.NET 8 SDK** ([Download Here](https://dotnet.microsoft.com/en-us/download/dotnet/8.0))
