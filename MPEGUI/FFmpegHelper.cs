@@ -3,37 +3,27 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace MPEGUI
 {
-    using System;
-    using System.Diagnostics;
-    using System.Globalization;
-    using System.IO;
-    using System.Text.RegularExpressions;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using System.Windows.Forms;
-
     public static class FFmpegHelper
     {
-        private static Process _ffmpegProcess;
-        private static CancellationTokenSource _cancellationTokenSource;
-
         /// <summary>
         /// Run an FFmpeg command asynchronously with progress tracking.
         /// </summary>
         public static async Task RunFFmpegAsync(
-      string arguments,
-      ProgressBar progressBar,
-      TimeSpan partDuration,
-      TimeSpan totalDuration,
-      CancellationToken cancellationToken,
-      Action<int> updateProgress,
-      bool isSplitProcess)
+     string arguments,
+     ProgressBar progressBar,
+     TimeSpan partDuration,
+     TimeSpan totalDuration,
+     CancellationToken cancellationToken,
+     Action<int> updateProgress,
+     bool isSplitProcess)
         {
-            using (Process ffmpegProcess = new Process()) // ✅ Each FFmpeg instance is isolated
+            using (Process ffmpegProcess = new Process())
             {
                 ffmpegProcess.StartInfo = new ProcessStartInfo
                 {
@@ -41,6 +31,7 @@ namespace MPEGUI
                     Arguments = arguments + " -progress pipe:1",
                     RedirectStandardError = true,
                     RedirectStandardOutput = true,
+                    RedirectStandardInput = true, // Allow sending commands like "q"
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
@@ -70,27 +61,40 @@ namespace MPEGUI
                     }
                 };
 
-                // ✅ Start the process
                 ffmpegProcess.Start();
                 ffmpegProcess.BeginOutputReadLine();
                 ffmpegProcess.BeginErrorReadLine();
 
-                await ffmpegProcess.WaitForExitAsync();
-
-                if (cancellationToken.IsCancellationRequested)
+                // Register a cancellation callback to send "q" (graceful stop)
+                using (cancellationToken.Register(() =>
                 {
-                    try
+                    if (!ffmpegProcess.HasExited)
                     {
-                        ffmpegProcess.Kill();
+                        try
+                        {
+                            // Send "q" so FFmpeg can gracefully finalize the file
+                            ffmpegProcess.StandardInput.Write("q");
+                            ffmpegProcess.StandardInput.Close();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine("Error sending 'q' to FFmpeg: " + ex.Message);
+                        }
                     }
-                    catch { /* Ignore process kill errors */ }
-                    throw new OperationCanceledException();
+                }))
+                {
+                    // Wait for FFmpeg to finish
+                    await ffmpegProcess.WaitForExitAsync(cancellationToken);
                 }
+
+                // If cancellation was requested, throw an exception to propagate it
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
 
 
-        // ✅ Overload function now also uses GetFFmpegPath()
+
+        // Overload for when you only need to supply a single duration
         public static async Task RunFFmpegAsync(string arguments, ProgressBar progressBar, TimeSpan videoDuration, CancellationToken cancellationToken)
         {
             await RunFFmpegAsync(arguments, progressBar, videoDuration, videoDuration, cancellationToken, null, false);
@@ -99,10 +103,18 @@ namespace MPEGUI
         /// <summary>
         /// Convert a video file while tracking progress.
         /// </summary>
-        public static async Task ConvertVideo(string inputFile, string outputFile, string codec, string bitrate, int crf, ProgressBar progressBar, CancellationToken cancellationToken)
+        public static async Task ConvertVideo(
+    string inputFile,
+    string outputFile,
+    string codec,
+    string bitrate,
+    int crf,
+    ProgressBar progressBar,
+    CancellationToken cancellationToken)
         {
             TimeSpan videoDuration = await GetVideoDuration(inputFile);
-            if (videoDuration == TimeSpan.Zero) throw new Exception("Failed to get video duration.");
+            if (videoDuration == TimeSpan.Zero)
+                throw new Exception("Failed to get video duration.");
 
             progressBar.Invoke((Action)(() =>
             {
@@ -110,51 +122,57 @@ namespace MPEGUI
                 progressBar.Value = 0;
             }));
 
-            // ✅ Determine correct output extension based on the codec
+            // Determine correct output extension based on the codec
             string newExtension = GetOutputExtension(codec);
+            // Use the final output file directly (no temporary file)
             outputFile = Path.ChangeExtension(outputFile, newExtension);
 
-            // ✅ Select correct audio codec for the chosen format
+            // Select the correct audio codec
             string audioCodec = newExtension == ".webm" ? "libopus" : "aac";
 
-            // ✅ Base FFmpeg command
-            string ffmpegArgs = $"-i \"{inputFile}\" -c:v {codec} -preset fast";
+            // Build the FFmpeg command
+            string ffmpegArgs = $"-i \"{inputFile}\"";
 
-            // ✅ Handle CRF correctly based on the codec
-            if (SupportsCRF(codec))
+            if (codec == "YouTube Full HD (1080p)")
             {
-                ffmpegArgs += $" -crf {crf}"; // ✅ Standard CRF for supported encoders
+                ffmpegArgs += $" -c:v libx264 -preset slow -crf {crf} -b:v 0 -maxrate 10000k -bufsize 16000k";
+                ffmpegArgs += $" -vf \"scale=1920:1080,fps=60\"";
             }
-            else if (codec.Contains("nvenc"))
+            else
             {
-                ffmpegArgs += $" -cq {crf}"; // ✅ CQ mode for NVIDIA NVENC
-                ffmpegArgs += $" -b:v 0 -maxrate {GetNVENCBitrate(crf)}k -bufsize {GetNVENCBitrate(crf) * 2}k"; // ✅ Limit excessive file sizes
-            }
-            else if (codec.Contains("qsv"))
-            {
-                ffmpegArgs += $" -global_quality {crf}"; // ✅ ICQ mode for Intel Quick Sync
-            }
-            else if (codec.Contains("amf"))
-            {
-                ffmpegArgs += $" -qp {crf}"; // ✅ QP mode for AMD AMF
-            }
-            else if (RequiresBitrate(codec) && !string.IsNullOrEmpty(bitrate))
-            {
-                ffmpegArgs += $" -b:v {bitrate}"; // ✅ For codecs requiring a fixed bitrate
+                ffmpegArgs += $" -c:v {codec} -preset fast";
+                if (SupportsCRF(codec))
+                {
+                    ffmpegArgs += $" -crf {crf}";
+                }
+                else if (codec.Contains("nvenc"))
+                {
+                    ffmpegArgs += $" -cq {crf}";
+                    ffmpegArgs += $" -b:v 0 -maxrate {GetNVENCBitrate(crf)}k -bufsize {GetNVENCBitrate(crf) * 2}k";
+                }
+                else if (codec.Contains("qsv"))
+                {
+                    ffmpegArgs += $" -global_quality {crf}";
+                }
+                else if (codec.Contains("amf"))
+                {
+                    ffmpegArgs += $" -qp {crf}";
+                }
+                else if (RequiresBitrate(codec) && !string.IsNullOrEmpty(bitrate))
+                {
+                    ffmpegArgs += $" -b:v {bitrate}";
+                }
             }
 
-            // ✅ Set audio codec
             ffmpegArgs += $" -c:a {audioCodec} -b:a 192k";
-
-            // ✅ Ensure correct metadata handling
             ffmpegArgs += " -map_metadata 0 -movflags +faststart -fflags +genpts";
-
-            // ✅ Output file
+            // Write directly to the final output file
             ffmpegArgs += $" \"{outputFile}\"";
 
-            // ✅ Run FFmpeg conversion
             await RunFFmpegAsync(ffmpegArgs, progressBar, videoDuration, cancellationToken);
         }
+
+
 
         private static bool SupportsCRF(string codec)
         {
@@ -162,7 +180,6 @@ namespace MPEGUI
                    codec.Contains("libvpx") || codec.Contains("libvpx-vp9") ||
                    codec.Contains("libaom");
         }
-
 
         private static bool RequiresBitrate(string codec)
         {
@@ -196,7 +213,6 @@ namespace MPEGUI
                 return 5000; // Max 5 Mbps
         }
 
-        
         /// <summary>
         /// Get the duration of a video file using FFmpeg.
         /// </summary>
@@ -247,7 +263,8 @@ namespace MPEGUI
             }
 
             TimeSpan videoDuration = await GetVideoDuration(inputFile);
-            if (videoDuration == TimeSpan.Zero) throw new Exception("Failed to get video duration.");
+            if (videoDuration == TimeSpan.Zero)
+                throw new Exception("Failed to get video duration.");
 
             progressBar.Invoke((Action)(() =>
             {
@@ -259,7 +276,7 @@ namespace MPEGUI
             List<Task> splitTasks = new List<Task>();
 
             int completedParts = 0;
-            object progressLock = new object(); // 🔒 Prevents race conditions
+            object progressLock = new object(); // Prevents race conditions
 
             for (int i = 0; i < parts; i++)
             {
@@ -269,19 +286,18 @@ namespace MPEGUI
 
                 string ffmpegArgs = $"-i \"{inputFile}\" -c copy -y -ss {formattedStartTime} -t {formattedPartDuration} \"{outputFile}\"";
 
-                Debug.WriteLine($"Running FFmpeg Split Command: {ffmpegArgs}"); // ✅ Debugging output
+                Debug.WriteLine($"Running FFmpeg Split Command: {ffmpegArgs}");
 
                 Task splitTask = RunFFmpegAsync(ffmpegArgs, progressBar, partDuration, videoDuration, cancellationToken, (partProgress) =>
                 {
                     lock (progressLock)
                     {
-                        // ✅ More accurate progress tracking
                         double elapsedSeconds = (completedParts + (partProgress / 100.0)) * partDuration.TotalSeconds;
                         int newProgress = (int)((elapsedSeconds / videoDuration.TotalSeconds) * 100);
 
                         progressBar.Invoke((Action)(() =>
                         {
-                            progressBar.Value = Math.Min(100, Math.Max(0, newProgress)); // ✅ Ensures 0-100% range
+                            progressBar.Value = Math.Min(100, Math.Max(0, newProgress));
                         }));
                     }
                 }, true);
@@ -291,20 +307,14 @@ namespace MPEGUI
 
             await Task.WhenAll(splitTasks);
 
-            // ✅ Ensure the progress bar reaches exactly 100% at the end
             progressBar.Invoke((Action)(() => progressBar.Value = 100));
         }
-
-
-
-
-
 
         private static string GetFFmpegPath()
         {
             try
             {
-                // ✅ Check if FFmpeg is available in system PATH
+                // Check if FFmpeg is available in system PATH
                 using (Process process = new Process())
                 {
                     process.StartInfo.FileName = "ffmpeg";
@@ -318,18 +328,16 @@ namespace MPEGUI
 
                     if (process.ExitCode == 0)
                     {
-                        return "ffmpeg"; // ✅ Use system FFmpeg
+                        return "ffmpeg";
                     }
                 }
             }
             catch
             {
-                // ❌ FFmpeg not found in PATH, fallback to embedded FFmpeg
+                // FFmpeg not found in PATH, fallback to embedded FFmpeg
             }
 
-            // ✅ Fallback: Use FFmpeg stored in the app directory
             string localFFmpeg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg", "ffmpeg.exe");
-
             if (File.Exists(localFFmpeg))
             {
                 return localFFmpeg;
@@ -338,21 +346,7 @@ namespace MPEGUI
             throw new Exception("FFmpeg not found. Please install FFmpeg or ensure 'ffmpeg.exe' is in the application folder.");
         }
 
-
-
-
-
-
-        /// <summary>
-        /// Cancels the current FFmpeg operation.
-        /// </summary>
-        public static void CancelOperation()
-        {
-            _cancellationTokenSource?.Cancel();
-            _ffmpegProcess?.Kill();
-        }
+        // Remove or leave an empty CancelOperation to avoid relying on static state.
+       
     }
-
 }
-
-

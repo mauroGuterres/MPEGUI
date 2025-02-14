@@ -5,6 +5,7 @@ namespace MPEGUI
 {
     public partial class FormConvertVideo : Form
     {
+        private CancellationTokenSource _cts;
         Dictionary<string, string> codecMap;
         private Process _ffmpegProcess;
         private bool _isConversionRunning = false;
@@ -126,13 +127,15 @@ namespace MPEGUI
             progressBar.Invoke((Action)(() => progressBar.Value = 0));
 
             _isConversionRunning = true;
-            CancellationTokenSource cts = new CancellationTokenSource();
+
+            // Use the class-level CancellationTokenSource
+            _cts = new CancellationTokenSource();
 
             try
             {
                 await Task.Run(async () =>
                 {
-                    await FFmpegHelper.ConvertVideo(inputFile, outputFile, selectedCodec, bitrate, crf, progressBar, cts.Token);
+                    await FFmpegHelper.ConvertVideo(inputFile, outputFile, selectedCodec, bitrate, crf, progressBar, _cts.Token);
                 });
 
                 MessageBox.Show("Conversion completed!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -150,66 +153,18 @@ namespace MPEGUI
                 btnConvert.Invoke((Action)(() => btnConvert.Enabled = true));
                 btnCancel.Invoke((Action)(() => btnCancel.Enabled = false));
                 progressBar.Invoke((Action)(() => progressBar.Value = 0));
+
+                // Reset the token source once done
+                _cts = null;
             }
         }
-
-
-
 
 
         private void btnCancel_Click(object sender, EventArgs e)
         {
-            FFmpegHelper.CancelOperation();
-        }
-
-        private Task RunFFmpegAsync(string arguments)
-        {
-            return Task.Run(() =>
-            {
-                _ffmpegProcess = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "ffmpeg",
-                        Arguments = arguments,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }
-                };
-
-                _ffmpegProcess.OutputDataReceived += (sender, e) => ParseProgress(e.Data);
-                _ffmpegProcess.ErrorDataReceived += (sender, e) => ParseProgress(e.Data);
-
-                _ffmpegProcess.Start();
-                _ffmpegProcess.BeginOutputReadLine();
-                _ffmpegProcess.BeginErrorReadLine();
-                _ffmpegProcess.WaitForExit();
-            });
-        }
-
-        private void ParseProgress(string ffmpegOutput)
-        {
-            if (string.IsNullOrEmpty(ffmpegOutput)) return;
-
-            // Extract the 'time=' value from FFmpeg output (e.g., "time=00:01:23.45")
-            Match match = Regex.Match(ffmpegOutput, @"time=(\d+):(\d+):(\d+)");
-            if (match.Success)
-            {
-                int hours = int.Parse(match.Groups[1].Value);
-                int minutes = int.Parse(match.Groups[2].Value);
-                int seconds = int.Parse(match.Groups[3].Value);
-                TimeSpan currentProgress = new TimeSpan(hours, minutes, seconds);
-
-                // Update progress bar
-                if (_totalDuration.TotalSeconds > 0)
-                {
-                    int progress = (int)((currentProgress.TotalSeconds / _totalDuration.TotalSeconds) * 100);
-                    progressBar.Invoke(new Action(() => progressBar.Value = Math.Min(progress, 100)));
-                }
-            }
-        }
+            // Cancel the conversion process via the class-level cancellation token source.
+            _cts?.Cancel();
+        }                
 
         private TimeSpan GetVideoDuration(string filePath)
         {
@@ -322,9 +277,7 @@ namespace MPEGUI
                     MessageBox.Show("Error loading FFmpeg codecs: " + ex.Message);
                 }
             });
-        }
-
-        
+        }        
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
