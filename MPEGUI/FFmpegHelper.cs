@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.WindowsAPICodePack.Taskbar;
+using System.Management;
 
 
 namespace MPEGUI
@@ -352,7 +353,226 @@ namespace MPEGUI
             throw new Exception("FFmpeg not found. Please install FFmpeg or ensure 'ffmpeg.exe' is in the application folder.");
         }
 
-        // Remove or leave an empty CancelOperation to avoid relying on static state.
-       
+        
+
+public static (string encoder, string options) GetHardwareEncoderOptions()
+    {
+        // Default to CPU encoder (lossless libx264)
+        string encoder = "libx264";
+        string options = "-preset veryslow -crf 0";
+
+        try
+        {
+            using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_VideoController"))
+            {
+                foreach (ManagementObject mo in searcher.Get())
+                {
+                    string name = mo["Name"]?.ToString().ToLower() ?? "";
+                    if (name.Contains("nvidia"))
+                    {
+                        encoder = "h264_nvenc";
+                        options = "-preset llhq -qp 0";
+                        break;
+                    }
+                    else if (name.Contains("amd") || name.Contains("radeon"))
+                    {
+                        encoder = "h264_amf";
+                        options = "-qp 0";
+                        break;
+                    }
+                    else if (name.Contains("intel"))
+                    {
+                        encoder = "h264_qsv";
+                        options = "-global_quality 1"; // near lossless mode
+                        break;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log error if necessary; keep fallback encoder.
+        }
+
+        return (encoder, options);
+    }
+
+
+        /// <summary>
+        /// Cuts out a specified portion (cutStart to cutEnd) from the video
+        /// and concatenates the remaining parts into a single output file.
+        /// </summary>
+        public static async Task CutVideoRange(
+      string inputFile,
+      string outputFile,
+      TimeSpan cutStart,
+      TimeSpan cutEnd,
+      ProgressBar progressBar,
+      CancellationToken cancellationToken)
+        {
+            // 1. Get total duration of the input video.
+            TimeSpan totalDuration = await GetVideoDuration(inputFile);
+            if (totalDuration == TimeSpan.Zero)
+                throw new Exception("Failed to get video duration.");
+
+            // Validate cut times.
+            if (cutStart < TimeSpan.Zero || cutEnd > totalDuration || cutStart >= cutEnd)
+                throw new Exception("Invalid cut range.");
+
+            // 2. Adjust cut times to the nearest keyframes.
+            TimeSpan adjustedCutStart = await GetNearestKeyframeTime(inputFile, cutStart, searchBackward: true, cancellationToken: cancellationToken);
+            TimeSpan adjustedCutEnd = await GetNearestKeyframeTime(inputFile, cutEnd, searchBackward: false, cancellationToken: cancellationToken);
+
+            // 3. Determine container-specific flags based on the output file extension.
+            string fileExt = Path.GetExtension(outputFile).ToLowerInvariant();
+            string extractionFlags;
+            string concatFlags;
+
+            switch (fileExt)
+            {
+                case ".mp4":
+                    extractionFlags = "-avoid_negative_ts make_zero -reset_timestamps 1";
+                    // For MP4, move the moov atom to the beginning.
+                    concatFlags = "-reset_timestamps 1 -movflags +faststart";
+                    break;
+                case ".mkv":
+                    extractionFlags = "-avoid_negative_ts make_zero -reset_timestamps 1 -fflags +genpts";
+                    // MKV doesn't need faststart.
+                    concatFlags = "-reset_timestamps 1 -copyts -start_at_zero";
+                    break;
+                default:
+                    // Default flags for other formats.
+                    extractionFlags = "-avoid_negative_ts make_zero -reset_timestamps 1";
+                    concatFlags = "-reset_timestamps 1 -copyts -start_at_zero";
+                    break;
+            }
+
+            // 4. Prepare intermediate file paths.
+            string tempDir = Path.GetDirectoryName(outputFile) ?? AppDomain.CurrentDomain.BaseDirectory;
+            string part1File = Path.Combine(tempDir, "part1_cut" + fileExt);
+            string part2File = Path.Combine(tempDir, "part2_cut" + fileExt);
+
+            // 5. Extract Part 1 (from 0 to adjustedCutStart) using stream copy.
+            if (adjustedCutStart > TimeSpan.Zero)
+            {
+                string part1Args = $"-i \"{inputFile}\" -ss 0 -to {adjustedCutStart} -c copy {extractionFlags} \"{part1File}\"";
+                await RunFFmpegAsync(part1Args, progressBar, adjustedCutStart, cancellationToken);
+            }
+
+            // 6. Extract Part 2 (from adjustedCutEnd to totalDuration) using stream copy.
+            if (adjustedCutEnd < totalDuration)
+            {
+                string part2Args = $"-i \"{inputFile}\" -ss {adjustedCutEnd} -to {totalDuration} -c copy {extractionFlags} \"{part2File}\"";
+                TimeSpan part2Duration = totalDuration - adjustedCutEnd;
+                await RunFFmpegAsync(part2Args, progressBar, part2Duration, cancellationToken);
+            }
+
+            // 7. Concatenate the parts.
+            bool part1Exists = File.Exists(part1File);
+            bool part2Exists = File.Exists(part2File);
+            string concatOutput = outputFile; // temporary output for concatenation step
+
+            if (!part1Exists && !part2Exists)
+            {
+                throw new Exception("Cut range removed the entire video!");
+            }
+            else if (part1Exists && !part2Exists)
+            {
+                File.Move(part1File, concatOutput, overwrite: true);
+            }
+            else if (!part1Exists && part2Exists)
+            {
+                File.Move(part2File, concatOutput, overwrite: true);
+            }
+            else
+            {
+                // Create a concat list file.
+                string concatListPath = Path.Combine(tempDir, "concat_list.txt");
+                File.WriteAllLines(concatListPath, new[]
+                {
+            $"file '{part1File}'",
+            $"file '{part2File}'"
+        });
+
+                string concatArgs = $"-f concat -safe 0 -i \"{concatListPath}\" -c copy {concatFlags} \"{concatOutput}\"";
+                TimeSpan combinedDuration = adjustedCutStart + (totalDuration - adjustedCutEnd);
+                await RunFFmpegAsync(concatArgs, progressBar, combinedDuration, cancellationToken);
+
+                // Cleanup intermediate files.
+                File.Delete(concatListPath);
+                File.Delete(part1File);
+                File.Delete(part2File);
+            }
+
+            // 8. Remux the concatenated file to rebuild indexes and timestamps.
+            // Use a separate temporary file for the remux output.
+            string remuxOutput = Path.Combine(tempDir, "remuxed" + fileExt);
+            string remuxArgs = $"-i \"{concatOutput}\" -c copy -reset_timestamps 1 {(fileExt == ".mp4" ? "-movflags +faststart" : "")} \"{remuxOutput}\"";
+            // Here we assume remuxing takes a very short time; adjust the progress duration if needed.
+            await RunFFmpegAsync(remuxArgs, progressBar, TimeSpan.FromSeconds(5), cancellationToken);
+
+            // Replace the concatenated file with the remuxed file.
+            File.Delete(concatOutput);
+            File.Move(remuxOutput, outputFile, overwrite: true);
+
+            progressBar.Invoke((Action)(() => progressBar.Value = 100));
+        }
+
+        
+
+        public static async Task<TimeSpan> GetNearestKeyframeTime(string inputFile, TimeSpan targetTime, bool searchBackward, CancellationToken cancellationToken = default)
+        {
+            // Use ffprobe to list keyframe timestamps (in seconds)
+            // This command lists only keyframes (-skip_frame nokey)
+            string arguments = $"-select_streams v -skip_frame nokey -show_frames -show_entries frame=pkt_pts_time -of csv=p=0 \"{inputFile}\"";
+            using (Process process = new Process())
+            {
+                process.StartInfo.FileName = "ffprobe";
+                process.StartInfo.Arguments = arguments;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                process.Start();
+
+                string output = await process.StandardOutput.ReadToEndAsync();
+                process.WaitForExit();
+
+                // Parse each line as a double (seconds)
+                List<double> keyframeTimes = new List<double>();
+                using (StringReader reader = new StringReader(output))
+                {
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        if (double.TryParse(line, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double seconds))
+                        {
+                            keyframeTimes.Add(seconds);
+                        }
+                    }
+                }
+
+                if (keyframeTimes.Count == 0)
+                {
+                    // Fallback: if no keyframe info is available, return the target time.
+                    return targetTime;
+                }
+
+                double targetSeconds = targetTime.TotalSeconds;
+                if (searchBackward)
+                {
+                    // Find the largest keyframe time that is <= targetSeconds.
+                    double nearest = keyframeTimes.Where(t => t <= targetSeconds).DefaultIfEmpty(keyframeTimes.First()).Max();
+                    return TimeSpan.FromSeconds(nearest);
+                }
+                else
+                {
+                    // Find the smallest keyframe time that is >= targetSeconds.
+                    double nearest = keyframeTimes.Where(t => t >= targetSeconds).DefaultIfEmpty(keyframeTimes.Last()).Min();
+                    return TimeSpan.FromSeconds(nearest);
+                }
+            }
+        }
+
+
     }
 }

@@ -68,6 +68,13 @@ namespace MPEGUI
             ToolStripMenuItem splitVideoMenu = new ToolStripMenuItem("Split Video");
             splitVideoMenu.Click += SplitVideoMenu_Click;
 
+
+            // Create new "Cut Video Range" Menu Item
+            ToolStripMenuItem cutVideoMenu = new ToolStripMenuItem("Cut Video Range");
+            cutVideoMenu.Click += CutVideoMenu_Click;
+            fileMenu.DropDownItems.Add(cutVideoMenu);
+
+
             // Add to Menu
             fileMenu.DropDownItems.Add(splitVideoMenu);
             menuStrip.Items.Add(fileMenu);
@@ -84,6 +91,13 @@ namespace MPEGUI
             FormSplitVideo splitForm = new FormSplitVideo();
             splitForm.Show();
         }
+
+        private void CutVideoMenu_Click(object sender, EventArgs e)
+        {
+            FormCutVideoRange formCutVideoRange = new FormCutVideoRange();
+            formCutVideoRange.Show();
+        }
+
 
         private void TrkCRF_Scroll(object sender, EventArgs e)
         {
