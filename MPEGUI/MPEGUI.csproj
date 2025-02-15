@@ -8,6 +8,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft-WindowsAPICodePack-Shell" Version="1.1.5" />
+    <PackageReference Include="WindowsAPICodePack" Version="8.0.6" />
+  </ItemGroup>
+
 	<ItemGroup>
 		<None Update="ffmpeg\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

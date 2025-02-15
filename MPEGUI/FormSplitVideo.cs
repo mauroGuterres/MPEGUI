@@ -78,7 +78,6 @@ namespace MPEGUI
             }
         }
 
-
         private void btnCancel_Click(object sender, EventArgs e)
         {
             _cts?.Cancel();

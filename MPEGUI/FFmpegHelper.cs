@@ -1,11 +1,8 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+using Microsoft.WindowsAPICodePack.Taskbar;
+
 
 namespace MPEGUI
 {
@@ -15,13 +12,13 @@ namespace MPEGUI
         /// Run an FFmpeg command asynchronously with progress tracking.
         /// </summary>
         public static async Task RunFFmpegAsync(
-     string arguments,
-     ProgressBar progressBar,
-     TimeSpan partDuration,
-     TimeSpan totalDuration,
-     CancellationToken cancellationToken,
-     Action<int> updateProgress,
-     bool isSplitProcess)
+    string arguments,
+    ProgressBar progressBar,
+    TimeSpan partDuration,
+    TimeSpan totalDuration,
+    CancellationToken cancellationToken,
+    Action<int> updateProgress,
+    bool isSplitProcess)
         {
             using (Process ffmpegProcess = new Process())
             {
@@ -31,7 +28,7 @@ namespace MPEGUI
                     Arguments = arguments + " -progress pipe:1",
                     RedirectStandardError = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardInput = true, // Allow sending commands like "q"
+                    RedirectStandardInput = true, // for sending 'q' on cancel
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
@@ -40,6 +37,7 @@ namespace MPEGUI
                 {
                     if (!string.IsNullOrEmpty(e.Data) && e.Data.StartsWith("out_time_ms="))
                     {
+                        // Extract time in ms
                         string timeMsStr = e.Data.Split('=')[1].Trim();
                         if (long.TryParse(timeMsStr, out long timeMs))
                         {
@@ -48,14 +46,16 @@ namespace MPEGUI
 
                             if (progressPercent <= 100)
                             {
-                                if (!isSplitProcess)
+                                // Update in-app progress bar
+                                progressBar.Invoke((Action)(() =>
                                 {
-                                    progressBar.Invoke((Action)(() => progressBar.Value = (int)progressPercent));
-                                }
-                                else
-                                {
-                                    updateProgress?.Invoke((int)progressPercent);
-                                }
+                                    int progressVal = (int)progressPercent;
+                                    progressBar.Value = progressVal;
+
+                                    // Update Windows taskbar progress
+                                    TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Normal);
+                                    TaskbarManager.Instance.SetProgressValue(progressVal, 100);
+                                }));
                             }
                         }
                     }
@@ -65,14 +65,13 @@ namespace MPEGUI
                 ffmpegProcess.BeginOutputReadLine();
                 ffmpegProcess.BeginErrorReadLine();
 
-                // Register a cancellation callback to send "q" (graceful stop)
+                // Graceful cancellation approach (send 'q' to finalize the file)
                 using (cancellationToken.Register(() =>
                 {
                     if (!ffmpegProcess.HasExited)
                     {
                         try
                         {
-                            // Send "q" so FFmpeg can gracefully finalize the file
                             ffmpegProcess.StandardInput.Write("q");
                             ffmpegProcess.StandardInput.Close();
                         }
@@ -83,14 +82,17 @@ namespace MPEGUI
                     }
                 }))
                 {
-                    // Wait for FFmpeg to finish
                     await ffmpegProcess.WaitForExitAsync(cancellationToken);
                 }
 
-                // If cancellation was requested, throw an exception to propagate it
+                // Reset taskbar progress when the operation completes or is canceled
+                TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress);
+
+                // If canceled, throw
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
+
 
 
 
@@ -171,8 +173,6 @@ namespace MPEGUI
 
             await RunFFmpegAsync(ffmpegArgs, progressBar, videoDuration, cancellationToken);
         }
-
-
 
         private static bool SupportsCRF(string codec)
         {
@@ -315,7 +315,6 @@ namespace MPEGUI
             // Ensure the progress bar reaches 100% at the end.
             progressBar.Invoke((Action)(() => progressBar.Value = 100));
         }
-
 
         private static string GetFFmpegPath()
         {
