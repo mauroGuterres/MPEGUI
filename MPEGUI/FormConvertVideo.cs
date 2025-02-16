@@ -74,6 +74,11 @@ namespace MPEGUI
             cutVideoMenu.Click += CutVideoMenu_Click;
             fileMenu.DropDownItems.Add(cutVideoMenu);
 
+            // Add the new "Extract Video Range" menu item.
+            ToolStripMenuItem extractVideoRangeMenu = new ToolStripMenuItem("Extract Video Range");
+            extractVideoRangeMenu.Click += ExtractVideoRangeMenu_Click;
+            fileMenu.DropDownItems.Add(extractVideoRangeMenu);
+
 
             // Add to Menu
             fileMenu.DropDownItems.Add(splitVideoMenu);
@@ -97,6 +102,13 @@ namespace MPEGUI
             FormCutVideoRange formCutVideoRange = new FormCutVideoRange();
             formCutVideoRange.Show();
         }
+
+        private void ExtractVideoRangeMenu_Click(object sender, EventArgs e)
+        {
+            FormExtractRange extractForm = new FormExtractRange();
+            extractForm.Show();
+        }
+
 
 
         private void TrkCRF_Scroll(object sender, EventArgs e)

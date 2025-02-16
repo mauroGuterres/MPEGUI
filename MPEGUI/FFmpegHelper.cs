@@ -518,7 +518,42 @@ public static (string encoder, string options) GetHardwareEncoderOptions()
             progressBar.Invoke((Action)(() => progressBar.Value = 100));
         }
 
-        
+        public static async Task ExtractVideoRange(
+    string inputFile,
+    string outputFile,
+    TimeSpan extractStart,
+    TimeSpan extractEnd,
+    ProgressBar progressBar,
+    CancellationToken cancellationToken)
+        {
+            // 1. Get total duration.
+            TimeSpan totalDuration = await GetVideoDuration(inputFile);
+            if (totalDuration == TimeSpan.Zero)
+                throw new Exception("Failed to get video duration.");
+
+            // Clamp and validate times.
+            if (extractStart < TimeSpan.Zero)
+                extractStart = TimeSpan.Zero;
+            if (extractEnd > totalDuration)
+                extractEnd = totalDuration;
+            if (extractStart >= extractEnd)
+                throw new Exception("Invalid extract range.");
+
+            // 2. Adjust the start time to the nearest keyframe (searching backward).
+            TimeSpan adjustedStart = await GetNearestKeyframeTime(inputFile, extractStart, searchBackward: true, cancellationToken: cancellationToken);
+            TimeSpan durationToExtract = extractEnd - adjustedStart;
+
+            // 3. Build the FFmpeg command.
+            // We use -ss before -i for fast keyframe–aligned seeking and -t for duration.
+            string args = $"-ss {adjustedStart} -i \"{inputFile}\" -t {durationToExtract} -c copy \"{outputFile}\"";
+
+            // 4. Run the command.
+            await RunFFmpegAsync(args, progressBar, durationToExtract, cancellationToken);
+            progressBar.Invoke((Action)(() => progressBar.Value = 100));
+        }
+
+
+
 
         public static async Task<TimeSpan> GetNearestKeyframeTime(string inputFile, TimeSpan targetTime, bool searchBackward, CancellationToken cancellationToken = default)
         {
