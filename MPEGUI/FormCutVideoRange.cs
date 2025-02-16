@@ -28,6 +28,53 @@ namespace MPEGUI
             // rangeTrackBar.Maximum = (int)videoDuration.TotalSeconds;
             // Optionally, set default lower/upper values.
             rangeTrackBar.RangeChanged += RangeTrackBar_RangeChanged;
+
+            // Enable drag and drop on the form.
+            this.AllowDrop = true;
+
+            // Register drag and drop events.
+            this.DragEnter += new DragEventHandler(Form_DragEnter);
+            this.DragDrop += new DragEventHandler(Form_DragDrop);
+
+        }
+
+        private void Form_DragEnter(object sender, DragEventArgs e)
+        {
+            // Check if the data is a file.
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                e.Effect = DragDropEffects.Copy;
+            }
+            else
+            {
+                e.Effect = DragDropEffects.None;
+            }
+        }
+
+        private void Form_DragDrop(object sender, DragEventArgs e)
+        {
+            // Get the file list.
+            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files != null && files.Length > 0)
+            {
+                // Assume the first file is the video file.
+                string videoFile = files[0];
+
+                // Optionally, you can filter based on file extension if needed.
+                string ext = Path.GetExtension(videoFile).ToLower();
+                if (ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".mov" || ext == ".webm")
+                {
+                    // Set the label to the file path (or update your UI accordingly).
+                    lblSelectedFile.Text = videoFile;
+
+                    // You can also trigger additional logic here, like updating the range trackbar
+                    // by reading the video's duration.
+                }
+                else
+                {
+                    MessageBox.Show("Please drop a valid video file.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
         }
 
         private void RangeTrackBar_RangeChanged(object sender, EventArgs e)

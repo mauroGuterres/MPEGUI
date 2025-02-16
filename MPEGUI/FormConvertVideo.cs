@@ -88,6 +88,52 @@ namespace MPEGUI
             this.MainMenuStrip = menuStrip;
             this.Controls.Add(menuStrip);
 
+            // Enable drag and drop on the form.
+            this.AllowDrop = true;
+
+            // Register drag and drop events.
+            this.DragEnter += new DragEventHandler(Form_DragEnter);
+            this.DragDrop += new DragEventHandler(Form_DragDrop);
+
+        }
+
+        private void Form_DragEnter(object sender, DragEventArgs e)
+        {
+            // Check if the data is a file.
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                e.Effect = DragDropEffects.Copy;
+            }
+            else
+            {
+                e.Effect = DragDropEffects.None;
+            }
+        }
+
+        private void Form_DragDrop(object sender, DragEventArgs e)
+        {
+            // Get the file list.
+            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files != null && files.Length > 0)
+            {
+                // Assume the first file is the video file.
+                string videoFile = files[0];
+
+                // Optionally, you can filter based on file extension if needed.
+                string ext = Path.GetExtension(videoFile).ToLower();
+                if (ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".mov" || ext == ".webm")
+                {
+                    // Set the label to the file path (or update your UI accordingly).
+                    lblSelectedFile.Text = videoFile;
+
+                    // You can also trigger additional logic here, like updating the range trackbar
+                    // by reading the video's duration.
+                }
+                else
+                {
+                    MessageBox.Show("Please drop a valid video file.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
         }
 
         // Open "Split Video" Form
@@ -140,7 +186,10 @@ namespace MPEGUI
             }
 
             string inputFile = lblSelectedFile.Text;
-            string outputFile = Path.ChangeExtension(inputFile, ".mp4");
+            string directory = Path.GetDirectoryName(inputFile);
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(inputFile);
+            string outputFile = Path.Combine(directory, fileNameWithoutExt + "_converted.mp4");
+
 
             string selectedFriendlyName = cmbCodec.SelectedItem.ToString();
             string selectedCodec = codecMap.FirstOrDefault(x => x.Value == selectedFriendlyName).Key ?? "libx264";
