@@ -1,0 +1,102 @@
+# Ignore Visual Studio-specific files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# Ignore build outputs
+bin/
+obj/
+out/
+Debug/
+Release/
+TestResults/
+publish/
+AppPackages/
+node_modules/
+
+# Ignore dependencies
+*.log
+*.cache
+*.config
+*.csproj.user
+*.csproj.vspscc
+*.csproj.vspscc
+*.sln.ide
+
+# Ignore runtime artifacts
+*.pdb
+*.mdb
+*.ilk
+*.exp
+*.idb
+*.obj
+*.tlog
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.app
+*.dmg
+*.ipa
+
+# Ignore NuGet packages
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.assets.json
+.nuget/
+*.csproj.nuget.g.props
+*.csproj.nuget.g.targets
+!nuget.config
+
+# Ignore logs and debug artifacts
+*.tlog
+*.lastcodeanalysissucceeded
+*.buildlog
+*.dotCover
+*.coverage
+*.coveragexml
+
+# Ignore database & cache files
+*.sqlite
+*.sqlite-journal
+*.db
+*.mdf
+*.ldf
+
+# Ignore user-specific files
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+
+# Ignore JetBrains Rider / ReSharper files
+.idea/
+*.DotSettings
+*.DotSettings.user
+resharper.xml
+
+# Ignore macOS/Linux specific files
+.DS_Store
+*.bak
+*.swp
+
+# Ignore deployment & container files
+docker-compose.override.yml
+.env
+*.key
+secrets.json
+
+# Ignore embedded FFmpeg binaries (optional)
+ffmpeg/
+ffmpeg.exe
+ffmpeg.log
+
+# Ignore Publish Settings
+*.Publish.xml
