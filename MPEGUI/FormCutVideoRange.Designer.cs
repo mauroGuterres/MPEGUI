@@ -52,6 +52,8 @@
             btnCancel = new Button();
             progressBar = new ProgressBar();
             rangeTrackBar = new Components.RangeTrackBar();
+            btnAddRange = new Button();
+            listBoxRanges = new ListBox();
             SuspendLayout();
             // 
             // lblSelectedFile
@@ -138,7 +140,7 @@
             progressBar.Location = new Point(29, 400);
             progressBar.Margin = new Padding(4, 5, 4, 5);
             progressBar.Name = "progressBar";
-            progressBar.Size = new Size(571, 38);
+            progressBar.Size = new Size(318, 38);
             progressBar.TabIndex = 8;
             // 
             // rangeTrackBar
@@ -154,11 +156,33 @@
             rangeTrackBar.TabIndex = 9;
             rangeTrackBar.UpperValue = 100;
             // 
+            // btnAddRange
+            // 
+            btnAddRange.Location = new Point(200, 75);
+            btnAddRange.Margin = new Padding(4, 5, 4, 5);
+            btnAddRange.Name = "btnAddRange";
+            btnAddRange.Size = new Size(143, 38);
+            btnAddRange.TabIndex = 10;
+            btnAddRange.Text = "Add Range";
+            btnAddRange.UseVisualStyleBackColor = true;
+            btnAddRange.Click += btnAddRange_Click;
+            // 
+            // listBoxRanges
+            // 
+            listBoxRanges.FormattingEnabled = true;
+            listBoxRanges.ItemHeight = 25;
+            listBoxRanges.Location = new Point(374, 249);
+            listBoxRanges.Name = "listBoxRanges";
+            listBoxRanges.Size = new Size(300, 329);
+            listBoxRanges.TabIndex = 11;
+            // 
             // FormCutVideoRange
             // 
             AutoScaleDimensions = new SizeF(10F, 25F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(686, 500);
+            ClientSize = new Size(686, 594);
+            Controls.Add(listBoxRanges);
+            Controls.Add(btnAddRange);
             Controls.Add(rangeTrackBar);
             Controls.Add(progressBar);
             Controls.Add(btnCancel);
@@ -177,5 +201,8 @@
         }
 
         #endregion
+
+        private Button btnAddRange;
+        private ListBox listBoxRanges;
     }
 }

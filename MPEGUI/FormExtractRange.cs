@@ -27,7 +27,7 @@ namespace MPEGUI
 
         private void Form_DragEnter(object sender, DragEventArgs e)
         {
-            // Check if the data is a file.
+            // If the data being dragged is a file, allow copy effect.
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 e.Effect = DragDropEffects.Copy;
@@ -38,24 +38,35 @@ namespace MPEGUI
             }
         }
 
-        private void Form_DragDrop(object sender, DragEventArgs e)
+        private async void Form_DragDrop(object sender, DragEventArgs e)
         {
-            // Get the file list.
+            // Retrieve the list of dropped files.
             string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (files != null && files.Length > 0)
             {
-                // Assume the first file is the video file.
-                string videoFile = files[0];
+                // Assume the first file is our video.
+                string file = files[0];
+                string ext = Path.GetExtension(file).ToLowerInvariant();
 
-                // Optionally, you can filter based on file extension if needed.
-                string ext = Path.GetExtension(videoFile).ToLower();
+                // Validate that the file is a supported video type.
                 if (ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".mov" || ext == ".webm")
                 {
-                    // Set the label to the file path (or update your UI accordingly).
-                    lblSelectedFile.Text = videoFile;
+                    // Update the UI with the file path.
+                    lblSelectedFile.Text = file;
 
-                    // You can also trigger additional logic here, like updating the range trackbar
-                    // by reading the video's duration.
+                    // Get the video duration using ffprobe (or your preferred method).
+                    TimeSpan duration = await FFmpegHelper.GetVideoDuration(file);
+                    Debug.WriteLine($"Video duration: {duration}");
+
+                    // Update the trackbar: minimum = 0, maximum = total seconds.
+                    rangeTrackBar.Minimum = 0;
+                    rangeTrackBar.Maximum = (int)duration.TotalSeconds;
+                    rangeTrackBar.LowerValue = 0;
+                    rangeTrackBar.UpperValue = (int)duration.TotalSeconds;
+
+                    // Update text boxes with formatted times.
+                    txtExtractStart.Text = TimeSpan.FromSeconds(rangeTrackBar.LowerValue).ToString(@"hh\:mm\:ss");
+                    txtExtractEnd.Text = TimeSpan.FromSeconds(rangeTrackBar.UpperValue).ToString(@"hh\:mm\:ss");
                 }
                 else
                 {
@@ -66,10 +77,10 @@ namespace MPEGUI
 
         private void RangeTrackBar_RangeChanged(object sender, EventArgs e)
         {
-            // Update text boxes based on trackbar values (assumed in seconds)
             txtExtractStart.Text = TimeSpan.FromSeconds(rangeTrackBar.LowerValue).ToString(@"hh\:mm\:ss");
             txtExtractEnd.Text = TimeSpan.FromSeconds(rangeTrackBar.UpperValue).ToString(@"hh\:mm\:ss");
         }
+
 
         private async void btnSelectFile_Click(object sender, EventArgs e)
         {

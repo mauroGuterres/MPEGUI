@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Text;
@@ -13,6 +14,7 @@ namespace MPEGUI
     public partial class FormCutVideoRange : Form
     {
         private CancellationTokenSource _cts;
+        private List<(TimeSpan Start, TimeSpan End)> removalRanges = new List<(TimeSpan, TimeSpan)>();
 
         public FormCutVideoRange()
         {
@@ -40,7 +42,7 @@ namespace MPEGUI
 
         private void Form_DragEnter(object sender, DragEventArgs e)
         {
-            // Check if the data is a file.
+            // If the data being dragged is a file, allow copy effect.
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 e.Effect = DragDropEffects.Copy;
@@ -51,24 +53,35 @@ namespace MPEGUI
             }
         }
 
-        private void Form_DragDrop(object sender, DragEventArgs e)
+        private async void Form_DragDrop(object sender, DragEventArgs e)
         {
-            // Get the file list.
+            // Retrieve the list of dropped files.
             string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (files != null && files.Length > 0)
             {
-                // Assume the first file is the video file.
-                string videoFile = files[0];
+                // Assume the first file is our video.
+                string file = files[0];
+                string ext = Path.GetExtension(file).ToLowerInvariant();
 
-                // Optionally, you can filter based on file extension if needed.
-                string ext = Path.GetExtension(videoFile).ToLower();
+                // Validate that the file is a supported video type.
                 if (ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".mov" || ext == ".webm")
                 {
-                    // Set the label to the file path (or update your UI accordingly).
-                    lblSelectedFile.Text = videoFile;
+                    // Update the UI with the file path.
+                    lblSelectedFile.Text = file;
 
-                    // You can also trigger additional logic here, like updating the range trackbar
-                    // by reading the video's duration.
+                    // Get the video duration using ffprobe (or your preferred method).
+                    TimeSpan duration = await FFmpegHelper.GetVideoDuration(file);
+                    Debug.WriteLine($"Video duration: {duration}");
+
+                    // Update the trackbar: minimum = 0, maximum = total seconds.
+                    rangeTrackBar.Minimum = 0;
+                    rangeTrackBar.Maximum = (int)duration.TotalSeconds;
+                    rangeTrackBar.LowerValue = 0;
+                    rangeTrackBar.UpperValue = (int)duration.TotalSeconds;
+
+                    // Update text boxes with formatted times.
+                    txtCutStart.Text = TimeSpan.FromSeconds(rangeTrackBar.LowerValue).ToString(@"hh\:mm\:ss");
+                    txtCutEnd.Text = TimeSpan.FromSeconds(rangeTrackBar.UpperValue).ToString(@"hh\:mm\:ss");
                 }
                 else
                 {
@@ -104,6 +117,27 @@ namespace MPEGUI
             }
         }
 
+        private void btnAddRange_Click(object sender, EventArgs e)
+        {
+            // Parse start and end from textboxes (or get from a range trackbar)
+            if (TimeSpan.TryParse(txtCutStart.Text, out TimeSpan start) && TimeSpan.TryParse(txtCutEnd.Text, out TimeSpan end))
+            {
+                if (start < end)
+                {
+                    removalRanges.Add((start, end));
+                    // Update a ListBox or other UI element to display the added range.
+                    listBoxRanges.Items.Add($"{start:hh\\:mm\\:ss} - {end:hh\\:mm\\:ss}");
+                }
+                else
+                {
+                    MessageBox.Show("Cut start must be before cut end.");
+                }
+            }
+            else
+            {
+                MessageBox.Show("Invalid time format. Use HH:MM:SS.");
+            }
+        }
 
         private async void btnCutVideo_Click(object sender, EventArgs e)
         {
@@ -114,55 +148,31 @@ namespace MPEGUI
                 return;
             }
 
-            // Parse user times (HH:MM:SS)
-            if (!TimeSpan.TryParse(txtCutStart.Text, out TimeSpan cutStart))
-            {
-                MessageBox.Show("Invalid Cut Start time. Use HH:MM:SS format.");
-                return;
-            }
-            if (!TimeSpan.TryParse(txtCutEnd.Text, out TimeSpan cutEnd))
-            {
-                MessageBox.Show("Invalid Cut End time. Use HH:MM:SS format.");
-                return;
-            }
-
-            // Build output file path (e.g., add "_cut" to the name)
+            // Build output file name (e.g., inputfilename_cut.mp4)
             string directory = Path.GetDirectoryName(inputFile);
             string fileNameNoExt = Path.GetFileNameWithoutExtension(inputFile);
             string extension = Path.GetExtension(inputFile);
             string outputFile = Path.Combine(directory, fileNameNoExt + "_cut" + extension);
 
-            // Prepare for progress + cancellation
             btnCutVideo.Enabled = false;
             progressBar.Value = 0;
-            _cts = new CancellationTokenSource();
+            CancellationTokenSource cts = new CancellationTokenSource();
 
             try
             {
-                await FFmpegHelper.CutVideoRange(
-                    inputFile,
-                    outputFile,
-                    cutStart,                    
-                    cutEnd,
-                    progressBar,
-                    _cts.Token
-                );
-
-                MessageBox.Show("Video cut successfully!", "Done", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (OperationCanceledException)
-            {
-                MessageBox.Show("Cut operation was canceled.");
+                await FFmpegHelper.CutVideoMultipleRanges(inputFile, outputFile, removalRanges, progressBar, cts.Token);
+                MessageBox.Show("Video processed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}", "Cut Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
                 btnCutVideo.Enabled = true;
                 progressBar.Value = 0;
-                _cts = null;
+                removalRanges.Clear(); // Reset the list for next use.
+                listBoxRanges.Items.Clear();
             }
         }
 

@@ -221,34 +221,55 @@ namespace MPEGUI
         {
             TimeSpan duration = TimeSpan.Zero;
 
+            // Look for ffprobe.exe in the ffmpeg folder relative to the application's base directory.
+            string ffprobePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg", "ffprobe.exe");
+            if (!File.Exists(ffprobePath))
+            {
+                // If not found, fallback to "ffprobe" assuming it's in PATH.
+                ffprobePath = "ffprobe";
+            }
+
             Process process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
-                    Arguments = $"-i \"{inputFile}\"",
-                    RedirectStandardError = true, // FFmpeg outputs duration info to stderr
+                    FileName = ffprobePath,
+                    Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{inputFile}\"",
+                    RedirectStandardOutput = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8
                 }
             };
 
             process.Start();
-            string output = await process.StandardError.ReadToEndAsync();
+            string output = await process.StandardOutput.ReadToEndAsync();
             process.WaitForExit();
 
-            Match match = Regex.Match(output, @"Duration:\s(\d+):(\d+):(\d+.\d+)", RegexOptions.IgnoreCase);
-            if (match.Success)
-            {
-                int hours = int.Parse(match.Groups[1].Value);
-                int minutes = int.Parse(match.Groups[2].Value);
-                double seconds = double.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
+            // Log the raw output for debugging
+            Debug.WriteLine("ffprobe raw output: " + output);
 
-                duration = new TimeSpan(0, hours, minutes, (int)seconds);
+            // Use the first non-empty line
+            string firstLine = output.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+            if (!string.IsNullOrWhiteSpace(firstLine))
+            {
+                if (double.TryParse(firstLine.Trim(),
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out double seconds))
+                {
+                    duration = TimeSpan.FromSeconds(seconds);
+                }
+                else
+                {
+                    Debug.WriteLine("Failed to parse duration from: " + firstLine);
+                }
             }
 
             return duration;
         }
+
 
         /// <summary>
         /// Splits a video into equal parts using FFmpeg with progress tracking.
@@ -517,6 +538,108 @@ public static (string encoder, string options) GetHardwareEncoderOptions()
 
             progressBar.Invoke((Action)(() => progressBar.Value = 100));
         }
+
+        public static async Task CutVideoMultipleRanges(
+    string inputFile,
+    string outputFile,
+    List<(TimeSpan Start, TimeSpan End)> removalRanges,
+    ProgressBar progressBar,
+    CancellationToken cancellationToken)
+        {
+            // 1. Get total duration.
+            TimeSpan totalDuration = await GetVideoDuration(inputFile);
+            if (totalDuration == TimeSpan.Zero)
+                throw new Exception("Failed to get video duration.");
+
+            // 2. Validate and sort removal ranges by start time.
+            removalRanges.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+            // 3. Compute the "keep" segments (i.e. portions to retain).
+            List<(TimeSpan Start, TimeSpan End)> keepSegments = new List<(TimeSpan, TimeSpan)>();
+            TimeSpan current = TimeSpan.Zero;
+            foreach (var range in removalRanges)
+            {
+                if (range.Start > current)
+                    keepSegments.Add((current, range.Start));
+                if (range.End > current)
+                    current = range.End;
+            }
+            if (current < totalDuration)
+                keepSegments.Add((current, totalDuration));
+
+            // 4. Determine container-specific flags based on output extension.
+            string fileExt = Path.GetExtension(outputFile).ToLowerInvariant();
+            string extractionFlags, concatFlags;
+            switch (fileExt)
+            {
+                case ".mp4":
+                    extractionFlags = "-avoid_negative_ts make_zero -reset_timestamps 1";
+                    // For MP4, move the moov atom to the beginning.
+                    concatFlags = "-reset_timestamps 1 -movflags +faststart";
+                    break;
+                case ".mkv":
+                    extractionFlags = "-avoid_negative_ts make_zero -reset_timestamps 1 -fflags +genpts";
+                    concatFlags = "-reset_timestamps 1 -copyts -start_at_zero";
+                    break;
+                default:
+                    extractionFlags = "-avoid_negative_ts make_zero -reset_timestamps 1";
+                    concatFlags = "-reset_timestamps 1 -copyts -start_at_zero";
+                    break;
+            }
+
+            // 5. Extract each keep segment into temporary files.
+            string tempDir = Path.GetDirectoryName(outputFile) ?? AppDomain.CurrentDomain.BaseDirectory;
+            List<string> segmentFiles = new List<string>();
+            int idx = 0;
+            foreach (var seg in keepSegments)
+            {
+                string segFile = Path.Combine(tempDir, $"keep_segment_{idx}{fileExt}");
+                // Use stream copy (no re-encoding) with timestamp flags.
+                string args = $"-i \"{inputFile}\" -ss {seg.Start} -to {seg.End} -c copy {extractionFlags} \"{segFile}\"";
+                await RunFFmpegAsync(args, progressBar, seg.End - seg.Start, cancellationToken);
+                segmentFiles.Add(segFile);
+                idx++;
+            }
+
+            // 6. Create a concat list file.
+            string concatListFile = Path.Combine(tempDir, "concat_list.txt");
+            File.WriteAllLines(concatListFile, segmentFiles.Select(file => $"file '{file.Replace("'", "'\\''")}'"));
+
+            // 7. Concatenate the extracted segments.
+            // Write to a temporary concatenated file.
+            string concatOutput = Path.Combine(tempDir, "concatenated" + fileExt);
+            string concatArgs = $"-f concat -safe 0 -i \"{concatListFile}\" -c copy {concatFlags} \"{concatOutput}\"";
+            TimeSpan combinedDuration = TimeSpan.Zero;
+            foreach (var seg in keepSegments)
+            {
+                combinedDuration += (seg.End - seg.Start);
+            }
+            await RunFFmpegAsync(concatArgs, progressBar, combinedDuration, cancellationToken);
+
+            // 8. Remux the concatenated file to rebuild indexes and timestamps.
+            // Write remux output to a temporary file.
+            string remuxOutput = Path.Combine(tempDir, "remuxed" + fileExt);
+            string remuxArgs = $"-i \"{concatOutput}\" -c copy -reset_timestamps 1 {(fileExt == ".mp4" ? "-movflags +faststart" : "")} \"{remuxOutput}\"";
+            // We assume remuxing is fast (e.g., 5 seconds worth of progress).
+            await RunFFmpegAsync(remuxArgs, progressBar, TimeSpan.FromSeconds(5), cancellationToken);
+
+            // 9. Replace the concatenated file with the remuxed file as the final output.
+            File.Delete(concatOutput);
+            File.Move(remuxOutput, outputFile, true);
+
+            // 10. Clean up temporary files.
+            File.Delete(concatListFile);
+            foreach (var file in segmentFiles)
+            {
+                if (File.Exists(file))
+                    File.Delete(file);
+            }
+
+            progressBar.Invoke((Action)(() => progressBar.Value = 100));
+        }
+
+
+
 
         public static async Task ExtractVideoRange(
     string inputFile,
